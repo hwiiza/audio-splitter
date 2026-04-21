@@ -513,7 +513,7 @@ function selectSet(idx) {
   S.scrollMs    = 0;
   S.playhead_ms = 0;
   const s = curSet();
-  D.audio_el.src = `/api/sessions/${s.sid}/audio`;
+  D.audio_el.src = `${API_BASE}/api/sessions/${s.sid}/audio`;
   D.drop_zone_overlay.classList.add('hidden');
   S.pxPerMs = Math.min(BASE_PPM, (wCv.width * 0.95) / Math.max(1, s.duration_ms));
   D.zoom_label.textContent = `×${(S.pxPerMs / BASE_PPM).toFixed(1)}`;
