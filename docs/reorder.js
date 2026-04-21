@@ -629,7 +629,7 @@ function playSlot(idx, withinMs) {
     const s  = P.sets[si];
     let el   = audioEls[s.sid];
     if (!el) {
-      el = new Audio(`/api/sessions/${s.sid}/audio`);
+      el = new Audio(`${API_BASE}/api/sessions/${s.sid}/audio`);
       audioEls[s.sid] = el;
     }
     el.currentTime = (slot.seg_s + withinMs) / 1000;
