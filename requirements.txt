@@ -1,0 +1,5 @@
+fastapi
+uvicorn[standard]
+numpy
+imageio-ffmpeg
+python-multipart

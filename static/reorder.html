@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>書き出し画面 — 音声台本分割</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- ツールバー -->
+  <div id="toolbar">
+    <button class="btn" id="btn-play">▶ 再生</button>
+    <button class="btn" id="btn-stop">⏹ 停止</button>
+    <label class="export-opt">
+      <input type="checkbox" id="gap-chk" checked> 0.8秒無音
+    </label>
+    <div class="sep"></div>
+    <button class="btn" id="btn-zoom-out">－</button>
+    <button class="btn" id="btn-zoom-in">＋</button>
+    <div class="sep"></div>
+    <button class="btn-primary" id="btn-export-audio">✂ 音声書き出し</button>
+    <button class="btn" id="btn-export-srt">📄 SRT書き出し</button>
+    <span id="status-label"></span>
+  </div>
+
+  <!-- メインエリア -->
+  <div id="main-area">
+
+    <!-- グリッドエリア -->
+    <div id="grid-area">
+      <!-- 上段: スクリプトヘッダー -->
+      <div id="upper-row">
+        <div id="name-placeholder"></div>
+        <div id="upper-scroll-wrap">
+          <canvas id="upper-cv"></canvas>
+        </div>
+      </div>
+
+      <!-- 水平区切り -->
+      <div id="hdivider"></div>
+
+      <!-- 下段: 波形グリッド -->
+      <div id="lower-row">
+        <canvas id="name-cv"></canvas>
+        <div id="lower-scroll-wrap">
+          <canvas id="lower-cv"></canvas>
+        </div>
+      </div>
+
+      <!-- 水平スクロールバー -->
+      <div id="hbar-wrap">
+        <div id="hbar-placeholder"></div>
+        <div id="hbar-track">
+          <div id="hbar-thumb"></div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- #main-area -->
+</div><!-- #app -->
+
+<!-- ファイル入力 (hidden) -->
+<input type="file" id="file-input" accept=".mp3,.wav,.ogg,.m4a,.flac" hidden>
+<audio id="audio-el" hidden></audio>
+
+<!-- 書き出し中プログレスオーバーレイ -->
+<div id="export-progress-overlay" class="overlay hidden">
+  <div id="export-progress-dialog">
+    <span class="spinner"></span>
+    <span id="export-progress-msg">書き出し中…</span>
+  </div>
+</div>
+
+<!-- キャラクター名入力ダイアログ -->
+<div id="char-prompt-overlay" class="hidden">
+  <div id="char-prompt-dialog">
+    <h3>キャラクター名を変更</h3>
+    <label for="char-prompt-input">キャラクター名:</label>
+    <input type="text" id="char-prompt-input" placeholder="例: キャラA">
+    <div class="dialog-btns">
+      <button class="btn" id="btn-char-cancel">キャンセル</button>
+      <button class="btn-primary" id="btn-char-ok">OK</button>
+    </div>
+  </div>
+</div>
+
+<script src="config.js"></script>
+<script src="reorder.js?v=10"></script>
+<script>
+// 編集画面から渡されたプロジェクトデータを自動読み込み (inline: always fresh)
+(async () => {
+  const raw = localStorage.getItem('audio_splitter_reorder');
+  console.warn('[reorder init] localStorage key found:', !!raw);
+  if (!raw) { setStatus('編集画面の「書き出し画面」ボタンから開いてください'); return; }
+  localStorage.removeItem('audio_splitter_reorder');
+
+  let proj;
+  try { proj = JSON.parse(raw); } catch (e) { console.error('[reorder init] parse error', e); return; }
+
+  console.warn('[reorder init] sets:', proj.sets?.length, 'lines:', proj.master_lines?.length);
+
+  P.master_chars = proj.master_chars || [];
+  P.master_lines = proj.master_lines || [];
+  P.mobChars     = new Set(proj.mob_chars || []);
+
+  setStatus(`読み込み中… (${(proj.sets || []).length} ファイル)`);
+  for (const s of (proj.sets || [])) {
+    try {
+      const apiBase = window.API_BASE || '';
+      const res = await fetch(`${apiBase}/api/sessions/${s.sid}`);
+      if (!res.ok) { console.warn('[reorder init] session fetch failed:', s.sid, res.status); continue; }
+      const data = await res.json();
+      P.sets.push({
+        sid:           s.sid,
+        name:          s.name,
+        assigned_char: s.assigned_char,
+        waveform:      data.waveform,
+        markers:       s.markers  || [],
+        silences:      s.silences || [],
+        duration_ms:   s.duration_ms,
+      });
+    } catch (e) { console.error('[reorder init] fetch error', s.sid, e); }
+  }
+
+  console.warn('[reorder init] loaded sets:', P.sets.length);
+  computeLayout();
+  drawAll();
+  updateStatus();
+})();
+</script>
+</body>
+</html>

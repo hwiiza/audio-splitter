@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>音声台本分割</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+
+  <!-- ツールバー -->
+  <div id="toolbar">
+    <button class="btn-primary" id="btn-open-proj">📂 プロジェクトを開く</button>
+    <button class="btn" id="btn-save-proj">💾 プロジェクトを保存</button>
+    <div class="sep"></div>
+    <button class="btn" id="btn-equal" disabled>⚡ 均等配置</button>
+    <button class="btn" id="btn-detect" disabled>🔍 無音検出</button>
+    <button class="btn" id="btn-undo" disabled title="元に戻す (Ctrl+Z)">↩</button>
+    <div class="sep"></div>
+    <button class="btn" id="btn-play" disabled>▶ 再生</button>
+    <button class="btn" id="btn-stop" disabled>⏹ 停止</button>
+    <div class="sep"></div>
+    <button class="btn" id="btn-reorder">🎬 書き出し画面</button>
+    <div class="sep"></div>
+    <span class="info-label">ズーム:</span>
+    <button class="btn" id="btn-zoom-out" disabled>－</button>
+    <span id="zoom-label" class="zoom-label">×1.0</span>
+    <button class="btn" id="btn-zoom-in" disabled>＋</button>
+  </div>
+
+  <!-- 無音検出設定バー -->
+  <div id="silence-bar">
+    <span class="info-label">無音検出レベル:</span>
+    <input type="range" id="silence-threshold" min="-60" max="-10" value="-36" step="1">
+    <span id="silence-db-label" class="info-label">-36 dB</span>
+    <label class="export-opt">
+      <input type="checkbox" id="show-silence" checked> 無音を表示
+    </label>
+    <span class="hint-label">左クリック: マーカー追加 ／ ドラッグ: 移動 ／ 右クリック: 削除 ／ Ctrl+ホイール: ズーム</span>
+  </div>
+
+  <!-- メインエリア -->
+  <div id="main-area">
+
+    <!-- 左ペイン -->
+    <div id="left-pane">
+
+      <!-- キャラクター一覧 -->
+      <div id="char-panel">
+        <div class="pane-hdr">
+          <span>キャラクター</span>
+          <button class="btn" id="btn-script">台本</button>
+        </div>
+        <div id="char-table-wrap">
+          <table id="char-table">
+            <thead>
+              <tr>
+                <th>キャラ</th>
+                <th>行</th>
+                <th>モブ</th>
+                <th>割り当て音声</th>
+              </tr>
+            </thead>
+            <tbody id="char-tbody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- 音声ファイル一覧 -->
+      <div id="file-panel">
+        <div class="pane-hdr">
+          <span>音声ファイル</span>
+          <button class="btn" id="btn-add-file">追加</button>
+        </div>
+        <div id="file-list"></div>
+      </div>
+
+    </div>
+
+    <!-- 右ペイン: 波形エディタ -->
+    <div id="right-pane">
+      <canvas id="seg-header-cv"></canvas>
+      <canvas id="waveform-canvas"></canvas>
+      <canvas id="ruler-canvas"></canvas>
+      <div id="scrollbar-wrap">
+        <div id="scrollbar-track">
+          <div id="scrollbar-thumb"></div>
+        </div>
+      </div>
+      <div id="status-bar">
+        <span>再生位置:</span>
+        <span id="playhead-time">00:00.00</span>
+        <span id="status-info"></span>
+      </div>
+      <!-- 空状態オーバーレイ -->
+      <div id="drop-zone-overlay">
+        <div id="drop-zone">
+          <div class="drop-icon">🎵</div>
+          <p>左の「追加」で音声ファイルを追加</p>
+          <p class="sub">複数ファイルのD&Dにも対応</p>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- 台本読み込み方法選択ダイアログ -->
+<div id="script-method-overlay" class="overlay hidden">
+  <div id="script-method-dialog">
+    <h3>マスター台本を読み込む</h3>
+    <p class="dialog-hint">台本の読み込み方法を選択してください</p>
+    <div class="method-btns">
+      <button class="btn-primary method-btn" id="btn-script-file">📁 ファイルから開く</button>
+      <button class="btn method-btn" id="btn-script-clip">📋 クリップボードから貼り付け</button>
+      <button class="btn method-btn" id="btn-script-method-cancel">キャンセル</button>
+    </div>
+  </div>
+</div>
+
+<!-- 台本貼り付けダイアログ (クリップボード用) -->
+<div id="script-overlay" class="overlay hidden">
+  <div id="script-dialog">
+    <h3>台本を貼り付け</h3>
+    <p class="dialog-hint">形式: キャラクター名[Tab]セリフ　（1行1セリフ）</p>
+    <textarea id="script-textarea" placeholder="台本をここに貼り付けてください…"></textarea>
+    <div class="dialog-btns">
+      <button class="btn" id="btn-script-cancel">キャンセル</button>
+      <button class="btn-primary" id="btn-script-ok">OK</button>
+    </div>
+  </div>
+</div>
+
+<!-- 音声ファイル入力 (hidden, multiple) -->
+<input type="file" id="file-input" accept=".mp3,.wav,.ogg,.m4a,.flac" multiple hidden>
+<!-- 台本ファイル入力 (hidden) -->
+<input type="file" id="script-file-input" accept=".txt,.tsv,.csv" hidden>
+<!-- プロジェクト入力 (hidden) -->
+<input type="file" id="proj-input" accept=".json" hidden>
+<audio id="audio-el" hidden></audio>
+
+<!-- キャラ名変更ダイアログ -->
+<div id="char-rename-overlay" class="hidden">
+  <div id="char-rename-dialog">
+    <h3>キャラクター名を変更</h3>
+    <label for="char-rename-input">キャラクター名:</label>
+    <input type="text" id="char-rename-input" placeholder="キャラクター名">
+    <div class="dialog-btns">
+      <button class="btn" id="btn-char-rename-cancel">キャンセル</button>
+      <button class="btn-primary" id="btn-char-rename-ok">OK</button>
+    </div>
+  </div>
+</div>
+
+<script src="config.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
