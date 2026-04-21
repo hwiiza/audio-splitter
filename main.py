@@ -419,6 +419,70 @@ async def get_layout(pid: str):
         raise HTTPException(404)
     return _compute_layout(pid)
 
+def _export_char_single(audio_path: str, slots: list, char_si, gap_ms: float, out_path: str) -> bool:
+    """
+    1キャラクター分の音声を filter_complex 1回のffmpeg呼び出しで書き出す。
+    セグメント数に関係なくffmpegは1回だけ実行されるため大幅に高速化される。
+    """
+    # 実音声スロットのインデックスを把握（asplit に必要）
+    audio_idxs = [i for i, s in enumerate(slots)
+                  if s.get("provider") == char_si and s.get("duration_ms", 0) > 10]
+    n_audio = len(audio_idxs)
+    audio_rank = {idx: k for k, idx in enumerate(audio_idxs)}
+
+    filter_parts, ordered_labels = [], []
+
+    # 入力音声ストリームを必要数に分割
+    if n_audio == 1:
+        filter_parts.append("[0:a]anull[_a0]")
+    elif n_audio > 1:
+        outs = "".join(f"[_a{k}]" for k in range(n_audio))
+        filter_parts.append(f"[0:a]asplit={n_audio}{outs}")
+
+    for i, slot in enumerate(slots):
+        dur_ms = slot.get("duration_ms", 0)
+        is_audio = (slot.get("provider") == char_si and dur_ms > 10)
+
+        if is_audio:
+            k = audio_rank[i]
+            ss, to = slot["seg_s"] / 1000, slot["seg_e"] / 1000
+            lbl = f"s{i}"
+            filter_parts.append(
+                f"[_a{k}]atrim=start={ss:.6f}:end={to:.6f},asetpts=PTS-STARTPTS[{lbl}]"
+            )
+            ordered_labels.append(f"[{lbl}]")
+        elif dur_ms > 10:
+            lbl = f"s{i}"
+            filter_parts.append(
+                f"aevalsrc=0:c=stereo:s=44100:d={dur_ms/1000:.6f}[{lbl}]"
+            )
+            ordered_labels.append(f"[{lbl}]")
+
+        if gap_ms > 0:
+            glbl = f"g{i}"
+            filter_parts.append(
+                f"aevalsrc=0:c=stereo:s=44100:d={gap_ms/1000:.6f}[{glbl}]"
+            )
+            ordered_labels.append(f"[{glbl}]")
+
+    if not ordered_labels:
+        return False
+
+    n = len(ordered_labels)
+    if n == 1:
+        filter_parts.append(f"{ordered_labels[0]}anull[out]")
+    else:
+        filter_parts.append(f"{''.join(ordered_labels)}concat=n={n}:v=0:a=1[out]")
+
+    fc = "; ".join(filter_parts)
+    cmd = [_FF, "-y"]
+    if n_audio > 0:
+        cmd += ["-i", audio_path]
+    cmd += ["-filter_complex", fc, "-map", "[out]", "-ar", "44100", "-b:a", "192k", out_path]
+
+    r = subprocess.run(cmd, capture_output=True, stdin=subprocess.DEVNULL)
+    return r.returncode == 0
+
 @app.post("/api/projects/{pid}/export")
 async def export_project_audio(pid: str, body: ExportBody):
     if pid not in _projects:
@@ -434,45 +498,17 @@ async def export_project_audio(pid: str, body: ExportBody):
     gap_ms = 800.0 if body.add_gap else 0.0
     out_dir = _WORK / pid / "export"
     out_dir.mkdir(parents=True, exist_ok=True)
-    char_pieces: dict = {}
-    for ri, row in enumerate(char_rows):
+    final_files = []
+    for row in char_rows:
         char = row["char"]
         si = row["set_idx"]
         if si is None:
             continue
         s = sets[si]
-        pieces = []
-        for slot in slots:
-            dur_ms = slot["duration_ms"]
-            piece_path = str(out_dir / f"p_{ri}_{slot['idx']}.mp3")
-            if slot["provider"] == si and dur_ms > 10:
-                ok = await asyncio.to_thread(_extract_segment, s["audio_path"], slot["seg_s"], slot["seg_e"], piece_path)
-                if ok:
-                    pieces.append(piece_path)
-            elif dur_ms > 10:
-                ok = await asyncio.to_thread(_generate_silence, dur_ms, piece_path)
-                if ok:
-                    pieces.append(piece_path)
-            if gap_ms > 0:
-                gp = str(out_dir / f"g_{ri}_{slot['idx']}.mp3")
-                ok = await asyncio.to_thread(_generate_silence, gap_ms, gp)
-                if ok:
-                    pieces.append(gp)
-        if pieces:
-            char_pieces[char] = pieces
-    if not char_pieces:
-        raise HTTPException(400, "書き出しデータがありません")
-    final_files = []
-    for char, pieces in char_pieces.items():
         safe = _sanitize(char)
         out_path = str(out_dir / f"{safe}.mp3")
-        concat_txt = str(out_dir / f"list_{safe}.txt")
-        with open(concat_txt, "w", encoding="utf-8") as f:
-            for p in pieces:
-                f.write(f"file '{p}'\n")
-        cmd = [_FF, "-y", "-f", "concat", "-safe", "0", "-i", concat_txt, "-ar", "44100", "-b:a", "192k", out_path]
-        r = await asyncio.to_thread(subprocess.run, cmd, capture_output=True, stdin=subprocess.DEVNULL)
-        if r.returncode == 0:
+        ok = await asyncio.to_thread(_export_char_single, s["audio_path"], slots, si, gap_ms, out_path)
+        if ok:
             final_files.append((f"{safe}.mp3", out_path))
     if not final_files:
         raise HTTPException(400, "音声の結合に失敗しました")
