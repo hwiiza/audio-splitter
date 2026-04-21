@@ -536,11 +536,11 @@ _NO_CACHE = {"Cache-Control": "no-store, no-cache, must-revalidate", "Pragma": "
 
 @app.get("/reorder.html")
 async def serve_reorder_html():
-    return FileResponse("static/reorder.html", headers=_NO_CACHE)
+    return FileResponse("docs/reorder.html", headers=_NO_CACHE)
 
 @app.get("/reorder.js")
 async def serve_reorder_js():
-    return FileResponse("static/reorder.js", headers=_NO_CACHE)
+    return FileResponse("docs/reorder.js", headers=_NO_CACHE)
 
 # static files — must be mounted last
-app.mount("/", StaticFiles(directory="static", html=True), name="static")
+app.mount("/", StaticFiles(directory="docs", html=True), name="static")
