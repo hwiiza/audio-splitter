@@ -8,4 +8,4 @@ window.API_BASE = (
   window.location.hostname === '127.0.0.1'
 )
   ? ''
-  : 'https://RENDER-APP-NAME.onrender.com';
+  : 'https://audio-splitter-hcy6.onrender.com';
